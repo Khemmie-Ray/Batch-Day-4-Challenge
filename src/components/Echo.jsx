@@ -1,112 +1,247 @@
-"use client";
-
-import React, { useState, useEffect, useCallback } from "react";
-import { GiMegaphone } from "react-icons/gi";
-import { baseAccountSdk } from "@/constants/walletService";
-import { SignInWithBaseButton } from "@base-org/account-ui/react";
-import {
-  handleTransaction,
-  checkPaymasterSupport,
-} from "@/constants/paymentService";
-import { toast } from "react-toastify";
+import { createBaseAccountSDK } from "@base-org/account";
+import { useCallback, useEffect, useState } from "react";
+import { baseSepolia } from "viem/chains";
 
 const Echo = () => {
-  const [isSignedIn, setIsSignedIn] = useState(false);
-  const [user, setUser] = useState<string | null>(null);
-  const [username, setUsername] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [provider, setProvider] = useState(null);
+  const [subAccount, setSubAccount] = useState(null);
+  const [universalAddress, setUniversalAddress] = useState("");
+  const [connected, setConnected] = useState(false);
+  const [loadingSubAccount, setLoadingSubAccount] = useState(false);
+  const [loadingUniversal, setLoadingUniversal] = useState(false);
+  const [status, setStatus] = useState("");
 
-  const handleSignIn = useCallback(async () => {
-    try {
-      const sdk = baseAccountSdk();
-      const provider = sdk?.getProvider();
-
-      if (!provider) {
-        throw new Error(
-          "Provider not found. Ensure Base Account SDK initialized correctly."
-        );
-      }
-      await sdk.getProvider().request({ method: "wallet_connect" });
-      setIsSignedIn(true);
-
-      const accounts = (await provider.request({
-        method: "eth_requestAccounts",
-      })) 
-
-      if (!accounts || accounts.length === 0) {
-        throw new Error("No account found after connection");
-      }
-
-      const address = accounts[0];
-      setUser(address);
-      setIsSignedIn(true);
-
-      localStorage.setItem("baseUser", address);
-      localStorage.setItem("isSignedIn", "true");
-
-      console.log("✅ User signed in:", address);
-    } catch (error) {
-      console.error("❌ Sign-in failed:", error);
-      setIsSignedIn(false);
-    }
-  }, []);
-
+  // Initialize SDK and crypto account
   useEffect(() => {
-    const storedUser = localStorage.getItem("baseUser");
-    const signedIn = localStorage.getItem("isSignedIn") === "true";
+    const initializeSDK = async () => {
+      try {
+        const sdkInstance = createBaseAccountSDK({
+          appName: "Sub Account Demo",
+          appChainIds: [baseSepolia.id],
+        });
 
-    if (storedUser && signedIn) {
-      setUser(storedUser);
-      setIsSignedIn(true);
-      console.log("🔁 Session restored:", storedUser);
-    }
+        const providerInstance = sdkInstance.getProvider();
+        setProvider(providerInstance);
+
+        setStatus("SDK initialized - ready to connect");
+      } catch (error) {
+        console.error("SDK initialization failed:", error);
+        setStatus("SDK initialization failed");
+      }
+    };
+
+    initializeSDK();
   }, []);
 
-  const disconnectWallet = useCallback(async () => {
-    try {
-      localStorage.removeItem("baseUser");
-      localStorage.removeItem("isSignedIn");
-      setUser(null);
-      setIsSignedIn(false);
-
-      const sdk = baseAccountSdk();
-      const provider = sdk?.getProvider();
-
-      if (provider && provider.session) {
-        if (typeof provider.session.reset === "function") {
-          await provider.session.reset();
-          console.log("✅ Provider session reset");
-        }
-      }
-
-      console.log("✅ User disconnected");
-    } catch (error) {
-      console.error("❌ Disconnect failed:", error);
+  const connectWallet = async () => {
+    if (!provider) {
+      setStatus("Provider not initialized");
+      return;
     }
-  }, []);
 
-  const joinEchoList = async () => {
+    setLoadingSubAccount(true);
+    setStatus("Connecting wallet...");
+
     try {
-      setLoading(true);
+      const accounts = await provider.request({
+        method: "eth_requestAccounts",
+        params: [],
+      });
 
-      const paymasterSupported = await checkPaymasterSupport();
-        if (!paymasterSupported) {
-          console.warn("Paymaster not supported, transaction may fail");
+      const universalAddr = accounts[0];
+      setUniversalAddress(universalAddr);
+      setConnected(true);
+
+      const response = await provider.request({
+        method: "wallet_getSubAccounts",
+        params: [
+          {
+            account: universalAddr,
+            domain: window.location.origin,
+          },
+        ],
+      });
+
+      const existing = response.subAccounts?.[0];
+      if (existing) {
+        setSubAccount(existing);
+        setStatus("Connected! Existing Sub Account found");
+      } else {
+        setStatus("Connected! No existing Sub Account found");
       }
-
-      const tx = await handleTransaction(username);
-      console.log("Transaction result:", tx);
-      alert("✅ Joined EchoList successfully!");
     } catch (error) {
-      console.error(error);
-      alert("❌ Failed to join EchoList");
+      console.error("Connection failed:", error);
+      setStatus("Connection failed");
     } finally {
-      setLoading(false);
-    }    
+      setLoadingSubAccount(false);
+    }
   };
 
-  const shortenAddress = (address) =>
-    `${address?.slice(0, 6)}...${address?.slice(-4)}`;
+  const createSubAccount = async () => {
+    if (!provider) {
+      setStatus("Provider not initialized");
+      return;
+    }
+
+    setLoadingSubAccount(true);
+    setStatus("Creating Sub Account...");
+
+    try {
+      const newSubAccount = await provider.request({
+        method: "wallet_addSubAccount",
+        params: [
+          {
+            account: {
+              type: "create",
+            },
+          },
+        ],
+      });
+
+      setSubAccount(newSubAccount);
+      setStatus("Sub Account created successfully!");
+    } catch (error) {
+      console.error("Sub Account creation failed:", error);
+      setStatus("Sub Account creation failed");
+    } finally {
+      setLoadingSubAccount(false);
+    }
+  };
+
+  const sendCalls = useCallback(
+    async (calls, from, setLoadingState) => {
+      if (!provider) {
+        setStatus("Provider not available");
+        return;
+      }
+
+      setLoadingState(true);
+      setStatus("Sending calls...");
+
+      try {
+        const callsId = await provider.request({
+          method: "wallet_sendCalls",
+          params: [
+            {
+              version: "2.0",
+              atomicRequired: true,
+              chainId: `0x${baseSepolia.id.toString(16)}`,
+              from,
+              calls,
+              capabilities: {},
+            },
+          ],
+        });
+
+        setStatus(`Calls sent! Calls ID: ${callsId}`);
+      } catch (error) {
+        console.error("Send calls failed:", error);
+        setStatus("Send calls failed");
+      } finally {
+        setLoadingState(false);
+      }
+    },
+    [provider]
+  );
+
+  const sendCallsFromSubAccount = useCallback(async () => {
+    if (!subAccount) {
+      setStatus("Sub account not available");
+      return;
+    }
+
+    const calls = [
+      {
+        to: "0x4bbfd120d9f352a0bed7a014bd67913a2007a878",
+        data: "0x9846cd9e",
+        value: "0x0",
+      },
+    ];
+
+    await sendCalls(calls, subAccount.address, setLoadingSubAccount);
+  }, [sendCalls, subAccount]);
+
+  const sendCallsFromUniversal = useCallback(async () => {
+    if (!universalAddress) {
+      setStatus("Universal account not available");
+      return;
+    }
+
+    const calls = [
+      {
+        to: "0x4bbfd120d9f352a0bed7a014bd67913a2007a878",
+        data: "0x9846cd9e",
+        value: "0x0",
+      },
+    ];
+
+    await sendCalls(calls, universalAddress, setLoadingUniversal);
+  }, [sendCalls, universalAddress]);
+
+  return (
+    <div className="sub-account-demo">
+      <h2>Sub Account Demo</h2>
+
+      <div className="status">
+        <p>
+          <strong>Status:</strong> {status}
+        </p>
+        {universalAddress && (
+          <p>
+            <strong>Universal Account:</strong> {universalAddress}
+          </p>
+        )}
+        {subAccount && (
+          <p>
+            <strong>Sub Account:</strong> {subAccount.address}</strong>
+          </p>
+        )}
+      </div>
+
+      <div className="actions">
+        {!connected ? (
+          <button
+            onClick={connectWallet}
+            disabled={loadingSubAccount || !provider}
+            className="connect-btn"
+          >
+            {loadingSubAccount ? "Connecting..." : "Connect Wallet"}
+          </button>
+        ) : !subAccount ? (
+          <button
+            onClick={createSubAccount}
+            disabled={loadingSubAccount}
+            className="create-btn"
+          >
+            {loadingSubAccount ? "Creating..." : "Add Sub Account"}
+          </button>
+        ) : (
+          <div>
+            <button
+              onClick={sendCallsFromSubAccount}
+              disabled={loadingSubAccount}
+              className="sub-account-btn"
+            >
+              {loadingSubAccount ? "Sending..." : "Send Calls from Sub Account"}
+            </button>
+            <button
+              onClick={sendCallsFromUniversal}
+              disabled={loadingUniversal}
+              className="universal-btn"
+            >
+              {loadingUniversal
+                ? "Sending..."
+                : "Send Calls from Universal Account"}
+            </button>
+          </div>
+        )}
+      </div>
+
+  
+    </div>
+  );
+}
+
 
   return (
     <div className="flex flex-col min-h-[100vh] w-[100%] p-10">
