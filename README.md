@@ -31,6 +31,14 @@ Thanks goes to these wonderful people 1:
 <!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
 <!-- prettier-ignore-start -->
 <!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center" valign="top" width="14.28%"><a href="https://github.com/Khemmie-Ray"><img src="https://avatars.githubusercontent.com/u/89976006?v=4?s=100" width="100px;" alt="Oluwakemi Atoyebi"/><br /><sub><b>Oluwakemi Atoyebi</b></sub></a><br /><a href="https://github.com/Khemmie-Ray/Batch-Day-4-Challenge/commits?author=khemmie-ray" title="Code">💻</a></td>
+    </tr>
+  </tbody>
+</table>
+
 <!-- markdownlint-restore -->
 <!-- prettier-ignore-end -->
 
